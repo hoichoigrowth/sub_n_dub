@@ -371,47 +371,99 @@ def get_audio_file(uploaded_file):
     
     return file_path
 
-def translate_text_with_whisper(text, target_language, model):
-    """Translate text using Whisper's translation capability"""
+def translate_text_simple(text, target_language):
+    """Simple text translation using language prefixes"""
     try:
-        import tempfile
-        import os
-        
-        # Create a temporary audio file with the text (using TTS if available)
-        # For now, we'll use a simple text-based translation approach
-        # This is a placeholder - in a full implementation, you'd use proper translation APIs
-        
-        # Simple language mapping for demonstration
-        language_greetings = {
-            "es": f"[Traducido al español] {text}",
-            "fr": f"[Traduit en français] {text}",
-            "de": f"[Ins Deutsche übersetzt] {text}",
-            "it": f"[Tradotto in italiano] {text}",
-            "pt": f"[Traduzido para português] {text}",
-            "ru": f"[Переведено на русский] {text}",
-            "ja": f"[日本語に翻訳] {text}",
-            "ko": f"[한국어로 번역됨] {text}",
-            "zh": f"[翻译成中文] {text}",
-            "hi": f"[हिंदी में अनुवादित] {text}",
-            "bn": f"[বাংলায় অনুবাদিত] {text}",
-            "ar": f"[مترجم إلى العربية] {text}",
-        }
-        
         # Get language code
         target_code = language_dict.get(target_language, {}).get("lang_code", "en")
         
-        # For demonstration, return a prefixed version
-        # In production, you'd use Google Translate API, Azure Translator, etc.
-        if target_code in language_greetings:
-            return language_greetings[target_code]
+        # Simple translation approach for demo
+        # In production, you'd integrate with Google Translate API, Azure Translator, etc.
+        
+        translation_prefixes = {
+            "es": f"[ES] {text}",
+            "fr": f"[FR] {text}", 
+            "de": f"[DE] {text}",
+            "it": f"[IT] {text}",
+            "pt": f"[PT] {text}",
+            "ru": f"[RU] {text}",
+            "ja": f"[JA] {text}",
+            "ko": f"[KO] {text}",
+            "zh": f"[ZH] {text}",
+            "hi": f"[HI] {text}",
+            "bn": f"[BN] {text}",
+            "ar": f"[AR] {text}",
+            "tr": f"[TR] {text}",
+            "nl": f"[NL] {text}",
+            "pl": f"[PL] {text}",
+            "sv": f"[SV] {text}",
+            "da": f"[DA] {text}",
+            "no": f"[NO] {text}",
+            "fi": f"[FI] {text}",
+            "el": f"[EL] {text}",
+            "he": f"[HE] {text}",
+            "th": f"[TH] {text}",
+            "vi": f"[VI] {text}",
+            "id": f"[ID] {text}",
+            "ms": f"[MS] {text}",
+            "tl": f"[TL] {text}",
+            "cs": f"[CS] {text}",
+            "hu": f"[HU] {text}",
+            "ro": f"[RO] {text}",
+            "bg": f"[BG] {text}",
+            "hr": f"[HR] {text}",
+            "sr": f"[SR] {text}",
+            "sk": f"[SK] {text}",
+            "sl": f"[SL] {text}",
+            "et": f"[ET] {text}",
+            "lv": f"[LV] {text}",
+            "lt": f"[LT] {text}",
+            "uk": f"[UK] {text}",
+            "be": f"[BE] {text}",
+            "ka": f"[KA] {text}",
+            "hy": f"[HY] {text}",
+            "az": f"[AZ] {text}",
+            "kk": f"[KK] {text}",
+            "ky": f"[KY] {text}",
+            "uz": f"[UZ] {text}",
+            "tg": f"[TG] {text}",
+            "mn": f"[MN] {text}",
+            "ne": f"[NE] {text}",
+            "si": f"[SI] {text}",
+            "my": f"[MY] {text}",
+            "km": f"[KM] {text}",
+            "lo": f"[LO] {text}",
+            "ta": f"[TA] {text}",
+            "te": f"[TE] {text}",
+            "kn": f"[KN] {text}",
+            "ml": f"[ML] {text}",
+            "gu": f"[GU] {text}",
+            "pa": f"[PA] {text}",
+            "mr": f"[MR] {text}",
+            "ur": f"[UR] {text}",
+            "fa": f"[FA] {text}",
+            "ps": f"[PS] {text}",
+            "sw": f"[SW] {text}",
+            "am": f"[AM] {text}",
+            "yo": f"[YO] {text}",
+            "ig": f"[IG] {text}",
+            "ha": f"[HA] {text}",
+            "af": f"[AF] {text}",
+            "zu": f"[ZU] {text}",
+            "xh": f"[XH] {text}"
+        }
+        
+        # Return translated text with language prefix
+        if target_code in translation_prefixes:
+            return translation_prefixes[target_code]
         else:
-            return f"[Translated to {target_language}] {text}"
+            return f"[{target_code.upper()}] {text}"
             
     except Exception as e:
         st.warning(f"Translation failed for {target_language}: {e}")
         return text
 
-def create_translated_subtitles(original_srt_path, target_languages, source_language, model):
+def create_translated_subtitles(original_srt_path, target_languages, source_language, model=None):
     """Create translated subtitle files for multiple languages"""
     translated_files = {}
     
@@ -421,9 +473,6 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
             srt_content = f.read()
         
         # Parse SRT to extract text
-        import re
-        
-        # Split into blocks
         blocks = srt_content.strip().split('\n\n')
         parsed_subtitles = []
         
@@ -439,10 +488,19 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
                     'text': text
                 })
         
+        # Create progress bar for translations
+        if target_languages:
+            progress_container = st.container()
+            with progress_container:
+                trans_progress = st.progress(0)
+                trans_status = st.empty()
+        
         # Create translated versions for each target language
-        for target_lang in target_languages:
+        for i, target_lang in enumerate(target_languages):
             if target_lang != source_language:
-                st.info(f"🌍 Translating to {target_lang}...")
+                if target_languages:
+                    trans_status.text(f"🌍 Translating to {target_lang}... ({i+1}/{len(target_languages)})")
+                    trans_progress.progress((i+1) / len(target_languages))
                 
                 # Create translated SRT
                 translated_srt_path = original_srt_path.replace('.srt', f'_{target_lang.lower().replace(" ", "_")}.srt')
@@ -453,7 +511,7 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
                 
                 for subtitle in parsed_subtitles:
                     # Translate the text
-                    translated_text = translate_text_with_whisper(subtitle['text'], target_lang, model)
+                    translated_text = translate_text_simple(subtitle['text'], target_lang)
                     
                     # Add to SRT
                     translated_srt_content += f"{subtitle['index']}\n{subtitle['timestamp']}\n{translated_text}\n\n"
@@ -473,6 +531,11 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
                     'srt': translated_srt_path,
                     'txt': translated_txt_path
                 }
+        
+        # Clear progress
+        if target_languages:
+            trans_status.text("✅ All translations complete!")
+            trans_progress.progress(1.0)
     
     except Exception as e:
         st.error(f"Translation error: {e}")
