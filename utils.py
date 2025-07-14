@@ -1,0 +1,15 @@
+language_dict = {
+    "Assamese": {"lang_code": "as", "meta_code": "asm_Beng"},
+    "Bengali": {"lang_code": "bn", "meta_code": "ben_Beng"},
+    "English": {"lang_code": "en", "meta_code": "eng_Latn"},
+    "Gujarati": {"lang_code": "gu", "meta_code": "guj_Gujr"},
+    "Hindi": {"lang_code": "hi", "meta_code": "hin_Deva"},
+    "Kannada": {"lang_code": "kn", "meta_code": "kan_Knda"},
+    "Malayalam": {"lang_code": "ml", "meta_code": "mal_Mlym"},
+    "Marathi": {"lang_code": "mr", "meta_code": "mar_Deva"},
+    "Punjabi": {"lang_code": "pa", "meta_code": "pan_Guru"},
+    "Sinhala": {"lang_code": "si", "meta_code": "sin_Sinh"},
+    "Tamil": {"lang_code": "ta", "meta_code": "tam_Taml"},
+    "Telugu": {"lang_code": "te", "meta_code": "tel_Telu"},
+    "Urdu": {"lang_code": "ur", "meta_code": "urd_Arab"},
+}
