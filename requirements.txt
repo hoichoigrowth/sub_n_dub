@@ -7,3 +7,7 @@ pathlib>=1.0.1
 uuid
 requests>=2.31.0
 ctranslate2>=3.20.0
+streamlit>=1.28.0
+faster-whisper>=0.10.0
+torch>=2.0.0
+ctranslate2>=3.20.0
