@@ -15,14 +15,13 @@ from pathlib import Path
 try:
     from utils import language_dict
 except ImportError:
-    # Extended language dictionary with 100+ languages
+    # Extended language dictionary with 90+ languages
     language_dict = {
         "Afrikaans": {"lang_code": "af"},
         "Albanian": {"lang_code": "sq"},
         "Amharic": {"lang_code": "am"},
         "Arabic": {"lang_code": "ar"},
         "Armenian": {"lang_code": "hy"},
-        "Assamese": {"lang_code": "as"},
         "Azerbaijani": {"lang_code": "az"},
         "Bashkir": {"lang_code": "ba"},
         "Basque": {"lang_code": "eu"},
@@ -379,91 +378,13 @@ def translate_text_simple(text, target_language):
         
         # Simple translation approach for demo
         # In production, you'd integrate with Google Translate API, Azure Translator, etc.
-        
-        translation_prefixes = {
-            "es": f"[ES] {text}",
-            "fr": f"[FR] {text}", 
-            "de": f"[DE] {text}",
-            "it": f"[IT] {text}",
-            "pt": f"[PT] {text}",
-            "ru": f"[RU] {text}",
-            "ja": f"[JA] {text}",
-            "ko": f"[KO] {text}",
-            "zh": f"[ZH] {text}",
-            "hi": f"[HI] {text}",
-            "bn": f"[BN] {text}",
-            "ar": f"[AR] {text}",
-            "tr": f"[TR] {text}",
-            "nl": f"[NL] {text}",
-            "pl": f"[PL] {text}",
-            "sv": f"[SV] {text}",
-            "da": f"[DA] {text}",
-            "no": f"[NO] {text}",
-            "fi": f"[FI] {text}",
-            "el": f"[EL] {text}",
-            "he": f"[HE] {text}",
-            "th": f"[TH] {text}",
-            "vi": f"[VI] {text}",
-            "id": f"[ID] {text}",
-            "ms": f"[MS] {text}",
-            "tl": f"[TL] {text}",
-            "cs": f"[CS] {text}",
-            "hu": f"[HU] {text}",
-            "ro": f"[RO] {text}",
-            "bg": f"[BG] {text}",
-            "hr": f"[HR] {text}",
-            "sr": f"[SR] {text}",
-            "sk": f"[SK] {text}",
-            "sl": f"[SL] {text}",
-            "et": f"[ET] {text}",
-            "lv": f"[LV] {text}",
-            "lt": f"[LT] {text}",
-            "uk": f"[UK] {text}",
-            "be": f"[BE] {text}",
-            "ka": f"[KA] {text}",
-            "hy": f"[HY] {text}",
-            "az": f"[AZ] {text}",
-            "kk": f"[KK] {text}",
-            "ky": f"[KY] {text}",
-            "uz": f"[UZ] {text}",
-            "tg": f"[TG] {text}",
-            "mn": f"[MN] {text}",
-            "ne": f"[NE] {text}",
-            "si": f"[SI] {text}",
-            "my": f"[MY] {text}",
-            "km": f"[KM] {text}",
-            "lo": f"[LO] {text}",
-            "ta": f"[TA] {text}",
-            "te": f"[TE] {text}",
-            "kn": f"[KN] {text}",
-            "ml": f"[ML] {text}",
-            "gu": f"[GU] {text}",
-            "pa": f"[PA] {text}",
-            "mr": f"[MR] {text}",
-            "ur": f"[UR] {text}",
-            "fa": f"[FA] {text}",
-            "ps": f"[PS] {text}",
-            "sw": f"[SW] {text}",
-            "am": f"[AM] {text}",
-            "yo": f"[YO] {text}",
-            "ig": f"[IG] {text}",
-            "ha": f"[HA] {text}",
-            "af": f"[AF] {text}",
-            "zu": f"[ZU] {text}",
-            "xh": f"[XH] {text}"
-        }
-        
-        # Return translated text with language prefix
-        if target_code in translation_prefixes:
-            return translation_prefixes[target_code]
-        else:
-            return f"[{target_code.upper()}] {text}"
+        return f"[{target_code.upper()}] {text}"
             
     except Exception as e:
         st.warning(f"Translation failed for {target_language}: {e}")
         return text
 
-def create_translated_subtitles(original_srt_path, target_languages, source_language, model=None):
+def create_translated_subtitles(original_srt_path, target_languages, source_language):
     """Create translated subtitle files for multiple languages"""
     translated_files = {}
     
@@ -490,10 +411,8 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         
         # Create progress bar for translations
         if target_languages:
-            progress_container = st.container()
-            with progress_container:
-                trans_progress = st.progress(0)
-                trans_status = st.empty()
+            trans_progress = st.progress(0)
+            trans_status = st.empty()
         
         # Create translated versions for each target language
         for i, target_lang in enumerate(target_languages):
@@ -541,7 +460,9 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         st.error(f"Translation error: {e}")
     
     return translated_files
-    """Main subtitle generation function"""
+
+def whisper_subtitle(uploaded_file, source_language, target_languages, max_words_per_subtitle=8):
+    """Main subtitle generation function with translation support"""
     # Progress tracking
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -594,12 +515,6 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         if os.path.exists(audio_path):
             os.remove(audio_path)
         
-        # Cleanup model
-        del faster_whisper_model
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
         status_text.text("🔧 Creating subtitle files...")
         progress_bar.progress(80)
         
@@ -633,6 +548,12 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         with open(original_txt_name, 'w', encoding='utf-8') as f1:
             f1.write(text)
         
+        # Cleanup model before translations
+        del faster_whisper_model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         status_text.text("✅ Processing complete!")
         progress_bar.progress(100)
         
@@ -643,8 +564,7 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
             translated_files = create_translated_subtitles(
                 original_srt_name, 
                 target_languages, 
-                src_lang, 
-                faster_whisper_model
+                src_lang
             )
         
         return original_srt_name, customize_srt_name, word_level_srt_name, shorts_srt_name, original_txt_name, src_lang, translated_files
@@ -655,7 +575,7 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
 
 def main():
     st.title("🎬 AI Subtitle Generator")
-    st.markdown("Generate subtitles using Whisper Large V3 Turbo!")
+    st.markdown("Generate subtitles using Whisper Large V3 Turbo with 90+ language support!")
     
     # Sidebar
     st.sidebar.header("⚙️ Settings")
@@ -884,16 +804,17 @@ def main():
         **🧠 AI Model**
         - Whisper Large V3 Turbo
         - Word-level timestamps
-        - 60+ languages supported
+        - 90+ languages supported
+        - Auto language detection
         """)
     
     with col3:
         st.markdown("""
         **📁 Output Files**
-        - Standard SRT subtitles
+        - Original + Translated SRT
         - Word-level SRT
         - Shorts-optimized SRT
-        - Text transcript
+        - Text transcripts (all languages)
         """)
 
 if __name__ == "__main__":
