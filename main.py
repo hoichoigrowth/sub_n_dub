@@ -1,159 +1,418 @@
 import streamlit as st
 import os
 import tempfile
-import subprocess
+import shutil
 import uuid
 import re
+import math
+import torch
+import gc
+import time
+from faster_whisper import WhisperModel
 from pathlib import Path
 
-# Simple language dictionary
-LANGUAGES = {
-    "Automatic": "auto",
-    "English": "en",
-    "Spanish": "es", 
-    "French": "fr",
-    "German": "de",
-    "Italian": "it",
-    "Portuguese": "pt",
-    "Russian": "ru",
-    "Japanese": "ja",
-    "Korean": "ko",
-    "Chinese": "zh",
-    "Hindi": "hi",
-    "Bengali": "bn",
-    "Arabic": "ar"
-}
+# Import your language dictionary
+try:
+    from utils import language_dict
+except ImportError:
+    # Fallback language dictionary if utils.py is not available
+    language_dict = {
+        "English": {"lang_code": "en"},
+        "Spanish": {"lang_code": "es"},
+        "French": {"lang_code": "fr"},
+        "German": {"lang_code": "de"},
+        "Italian": {"lang_code": "it"},
+        "Portuguese": {"lang_code": "pt"},
+        "Russian": {"lang_code": "ru"},
+        "Japanese": {"lang_code": "ja"},
+        "Korean": {"lang_code": "ko"},
+        "Chinese": {"lang_code": "zh"},
+        "Hindi": {"lang_code": "hi"},
+        "Bengali": {"lang_code": "bn"},
+        "Arabic": {"lang_code": "ar"}
+    }
 
-# App configuration
+# Streamlit configuration
 st.set_page_config(
-    page_title="🎬 Subtitle Generator",
+    page_title="🎬 AI Subtitle Generator",
     page_icon="🎬",
     layout="wide"
 )
 
-def check_dependencies():
-    """Check if required tools are available"""
-    missing = []
-    
-    # Check FFmpeg
-    try:
-        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        missing.append("FFmpeg")
-    
-    return missing
+# Initialize session state
+if 'processing' not in st.session_state:
+    st.session_state.processing = False
 
-def clean_filename(filename):
+# Setup folders
+BASE_PATH = "."
+SUBTITLE_FOLDER = f"{BASE_PATH}/generated_subtitle"
+TEMP_FOLDER = f"{BASE_PATH}/subtitle_audio"
+
+# Create folders if they don't exist
+os.makedirs(SUBTITLE_FOLDER, exist_ok=True)
+os.makedirs(TEMP_FOLDER, exist_ok=True)
+
+def get_language_name(lang_code):
+    """Get language name from language code"""
+    for language, details in language_dict.items():
+        if details["lang_code"] == lang_code:
+            return language
+    return lang_code
+
+def clean_file_name(file_path):
     """Clean filename for safe processing"""
-    name = Path(filename).stem
-    cleaned = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-    return f"{cleaned}_{uuid.uuid4().hex[:6]}"
+    file_name = os.path.basename(file_path)
+    file_name, file_extension = os.path.splitext(file_name)
+    
+    # Replace non-alphanumeric characters with underscore
+    cleaned = re.sub(r'[^a-zA-Z\d]+', '_', file_name)
+    clean_file_name = re.sub(r'_+', '_', cleaned).strip('_')
+    
+    # Generate random UUID for uniqueness
+    random_uuid = uuid.uuid4().hex[:6]
+    
+    # Combine cleaned file name with original extension
+    clean_file_path = os.path.join(
+        os.path.dirname(file_path), 
+        clean_file_name + f"_{random_uuid}" + file_extension
+    )
+    
+    return clean_file_path
 
-def extract_audio_simple(video_path, audio_path):
-    """Extract audio using FFmpeg"""
-    try:
-        cmd = [
-            'ffmpeg', '-y', '-i', video_path,
-            '-vn', '-acodec', 'pcm_s16le', 
-            '-ar', '16000', '-ac', '1',
-            audio_path
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
-    except Exception as e:
-        st.error(f"Audio extraction failed: {e}")
-        return False
+def format_segments(segments):
+    """Format whisper segments into structured data"""
+    saved_segments = list(segments)
+    sentence_timestamp = []
+    words_timestamp = []
+    speech_to_text = ""
 
-def transcribe_with_whisper_cli(audio_path, language="auto"):
-    """Use Whisper CLI for transcription"""
-    try:
-        # Use whisper command line tool
-        cmd = ['whisper', audio_path, '--language', language, '--model', 'base', '--output_format', 'srt']
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.path.dirname(audio_path))
-        
-        if result.returncode == 0:
-            # Find generated SRT file
-            base_name = Path(audio_path).stem
-            srt_path = os.path.join(os.path.dirname(audio_path), f"{base_name}.srt")
-            if os.path.exists(srt_path):
-                return srt_path
-        
-        return None
-    except Exception as e:
-        st.error(f"Transcription failed: {e}")
-        return None
+    for i in saved_segments:
+        text = i.text.strip()
+        sentence_id = len(sentence_timestamp)
+        sentence_timestamp.append({
+            "id": sentence_id,
+            "text": text,
+            "start": i.start,
+            "end": i.end,
+            "words": []
+        })
+        speech_to_text += text + " "
 
-def create_subtitle_video_simple(video_path, srt_path, output_path):
-    """Create video with subtitles using FFmpeg"""
-    try:
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', video_path,
-            '-vf', f"subtitles='{srt_path}':force_style='Fontsize=20,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2'",
-            '-c:a', 'copy',
-            output_path
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.returncode == 0
-    except Exception as e:
-        st.error(f"Video creation failed: {e}")
-        return False
+        # Process each word in the sentence
+        if hasattr(i, 'words') and i.words:
+            for word in i.words:
+                word_data = {
+                    "word": word.word.strip(),
+                    "start": word.start,
+                    "end": word.end
+                }
+                sentence_timestamp[sentence_id]["words"].append(word_data)
+                words_timestamp.append(word_data)
 
-def create_simple_txt(srt_path, txt_path):
-    """Convert SRT to simple text file"""
+    return sentence_timestamp, words_timestamp, speech_to_text
+
+def combine_word_segments(words_timestamp, max_words_per_subtitle=8, min_silence_between_words=0.5):
+    """Combine words into subtitle segments"""
+    if max_words_per_subtitle <= 1:
+        max_words_per_subtitle = 1
+    
+    before_translate = {}
+    id = 1
+    text = ""
+    start = None
+    end = None
+    word_count = 0
+    last_end_time = None
+
+    for i in words_timestamp:
+        try:
+            word = i['word']
+            word_start = i['start']
+            word_end = i['end']
+
+            # Check for sentence-ending punctuation
+            is_end_of_sentence = word.endswith(('.', '?', '!'))
+
+            # Check for conditions to create a new subtitle
+            if ((last_end_time is not None and word_start - last_end_time > min_silence_between_words)
+                or word_count >= max_words_per_subtitle
+                or is_end_of_sentence):
+
+                # Store the previous subtitle if there's any
+                if text:
+                    before_translate[id] = {
+                        "text": text,
+                        "start": start,
+                        "end": end
+                    }
+                    id += 1
+
+                # Reset for the new subtitle segment
+                text = word
+                start = word_start
+                word_count = 1
+            else:
+                if word_count == 0:
+                    start = word_start
+                text += " " + word
+                word_count += 1
+
+            end = word_end
+            last_end_time = word_end
+
+        except KeyError as e:
+            st.warning(f"KeyError: {e} - Skipping word")
+            continue
+
+    # Add the last subtitle segment
+    if text:
+        before_translate[id] = {
+            "text": text,
+            "start": start,
+            "end": end
+        }
+
+    return before_translate
+
+def custom_word_segments(words_timestamp, min_silence_between_words=0.3, max_characters_per_subtitle=17):
+    """Create custom word segments for shorts"""
+    before_translate = []
+    text = ""
+    start = None
+    end = None
+
+    i = 0
+    while i < len(words_timestamp):
+        word = words_timestamp[i]['word']
+        word_start = words_timestamp[i]['start']
+        word_end = words_timestamp[i]['end']
+
+        # Handle hyphenated words
+        if i + 1 < len(words_timestamp) and words_timestamp[i + 1]['word'].startswith("-"):
+            combined_text = word + words_timestamp[i + 1]['word'][:]
+            combined_start_time = word_start
+            combined_end_time = words_timestamp[i + 1]['end']
+            i += 1
+
+            while i + 1 < len(words_timestamp) and words_timestamp[i + 1]['word'].startswith("-"):
+                combined_text += words_timestamp[i + 1]['word'][:]
+                combined_end_time = words_timestamp[i + 1]['end']
+                i += 1
+        else:
+            combined_text = word
+            combined_start_time = word_start
+            combined_end_time = word_end
+
+        # Check character limit
+        if len(text) + len(combined_text) > max_characters_per_subtitle:
+            if text:
+                before_translate.append({
+                    "word": text.strip(),
+                    "start": start,
+                    "end": end
+                })
+            text = combined_text
+            start = combined_start_time
+        else:
+            if not text:
+                start = combined_start_time
+            text += " " + combined_text
+
+        end = combined_end_time
+        i += 1
+
+    # Add final segment
+    if text:
+        before_translate.append({
+            "word": text.strip(),
+            "start": start,
+            "end": end
+        })
+
+    return before_translate
+
+def convert_time_to_srt_format(seconds):
+    """Convert seconds to SRT time format"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    milliseconds = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
+
+def write_subtitles_to_file(subtitles, filename="subtitles.srt"):
+    """Write subtitles to SRT file"""
+    with open(filename, 'w', encoding='utf-8') as f:
+        for id, entry in subtitles.items():
+            f.write(f"{id}\n")
+            start_time = convert_time_to_srt_format(entry['start'])
+            end_time = convert_time_to_srt_format(entry['end'])
+            f.write(f"{start_time} --> {end_time}\n")
+            f.write(f"{entry['text']}\n\n")
+
+def word_level_srt(words_timestamp, srt_path="word_level_subtitle.srt", shorts=False):
+    """Create word-level SRT file"""
+    punctuation_pattern = re.compile(r'[.,!?;:"\–—_~^+*|]')
+    with open(srt_path, 'w', encoding='utf-8') as srt_file:
+        for i, word_info in enumerate(words_timestamp, start=1):
+            start_time = convert_time_to_srt_format(word_info['start'])
+            end_time = convert_time_to_srt_format(word_info['end'])
+            word = word_info['word']
+            word = re.sub(punctuation_pattern, '', word)
+            if word.strip() == 'i':
+                word = "I"
+            if not shorts:
+                word = word.replace("-", "")
+            srt_file.write(f"{i}\n{start_time} --> {end_time}\n{word}\n\n")
+
+def generate_srt_from_sentences(sentence_timestamp, srt_path="default_subtitle.srt"):
+    """Generate SRT from sentence timestamps"""
+    with open(srt_path, 'w', encoding='utf-8') as srt_file:
+        for index, sentence in enumerate(sentence_timestamp):
+            start_time = convert_time_to_srt_format(sentence['start'])
+            end_time = convert_time_to_srt_format(sentence['end'])
+            srt_file.write(f"{index + 1}\n{start_time} --> {end_time}\n{sentence['text']}\n\n")
+
+def get_audio_file(uploaded_file):
+    """Save uploaded file to temp folder"""
+    file_path = os.path.join(TEMP_FOLDER, uploaded_file.name)
+    file_path = clean_file_name(file_path)
+    
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.read())
+    
+    return file_path
+
+def whisper_subtitle(uploaded_file, source_language, max_words_per_subtitle=8):
+    """Main subtitle generation function"""
+    # Progress tracking
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     try:
-        with open(srt_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        # Load model
+        status_text.text("🧠 Loading Whisper model...")
+        progress_bar.progress(10)
         
-        # Extract just the text from SRT
-        lines = content.split('\n')
-        text_lines = []
+        if torch.cuda.is_available():
+            device = "cuda"
+            compute_type = "float16"
+        else:
+            device = "cpu" 
+            compute_type = "int8"
         
-        for line in lines:
-            line = line.strip()
-            if line and not line.isdigit() and '-->' not in line:
-                text_lines.append(line)
+        faster_whisper_model = WhisperModel(
+            "deepdml/faster-whisper-large-v3-turbo-ct2",
+            device=device, 
+            compute_type=compute_type
+        )
         
-        with open(txt_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(text_lines))
+        status_text.text("📁 Processing audio file...")
+        progress_bar.progress(20)
         
-        return True
+        audio_path = get_audio_file(uploaded_file)
+        
+        status_text.text("🎯 Transcribing audio...")
+        progress_bar.progress(40)
+        
+        if source_language == "Automatic":
+            segments, d = faster_whisper_model.transcribe(audio_path, word_timestamps=True)
+            lang_code = d.language
+            src_lang = get_language_name(lang_code)
+        else:
+            lang = language_dict[source_language]['lang_code']
+            segments, d = faster_whisper_model.transcribe(
+                audio_path, 
+                word_timestamps=True, 
+                language=lang
+            )
+            src_lang = source_language
+        
+        status_text.text("📝 Processing segments...")
+        progress_bar.progress(60)
+        
+        sentence_timestamp, words_timestamp, text = format_segments(segments)
+        
+        # Cleanup audio file
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+        
+        # Cleanup model
+        del faster_whisper_model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        status_text.text("🔧 Creating subtitle files...")
+        progress_bar.progress(80)
+        
+        # Create different subtitle formats
+        word_segments = combine_word_segments(
+            words_timestamp, 
+            max_words_per_subtitle=max_words_per_subtitle, 
+            min_silence_between_words=0.5
+        )
+        shorts_segments = custom_word_segments(
+            words_timestamp, 
+            min_silence_between_words=0.3, 
+            max_characters_per_subtitle=17
+        )
+        
+        # Setup file names
+        base_name = os.path.basename(uploaded_file.name).rsplit('.', 1)[0][:30]
+        save_name = f"{SUBTITLE_FOLDER}/{base_name}_{src_lang}.srt"
+        original_srt_name = clean_file_name(save_name)
+        original_txt_name = original_srt_name.replace(".srt", ".txt")
+        word_level_srt_name = original_srt_name.replace(".srt", "_word_level.srt")
+        customize_srt_name = original_srt_name.replace(".srt", "_customize.srt")
+        shorts_srt_name = original_srt_name.replace(".srt", "_shorts.srt")
+        
+        # Generate files
+        generate_srt_from_sentences(sentence_timestamp, srt_path=original_srt_name)
+        word_level_srt(words_timestamp, srt_path=word_level_srt_name)
+        word_level_srt(shorts_segments, srt_path=shorts_srt_name, shorts=True)
+        write_subtitles_to_file(word_segments, filename=customize_srt_name)
+        
+        with open(original_txt_name, 'w', encoding='utf-8') as f1:
+            f1.write(text)
+        
+        status_text.text("✅ Processing complete!")
+        progress_bar.progress(100)
+        
+        return original_srt_name, customize_srt_name, word_level_srt_name, shorts_srt_name, original_txt_name, src_lang
+        
     except Exception as e:
-        st.error(f"Text file creation failed: {e}")
-        return False
+        st.error(f"Error in whisper_subtitle: {e}")
+        return None, None, None, None, None, None
 
 def main():
-    st.title("🎬 Simple Subtitle Generator")
-    st.markdown("Upload a video and get subtitles embedded!")
-    
-    # Check dependencies
-    missing = check_dependencies()
-    if missing:
-        st.error(f"❌ Missing dependencies: {', '.join(missing)}")
-        st.markdown("""
-        **To fix this:**
-        1. Install FFmpeg: `sudo apt install ffmpeg`
-        2. Install Whisper: `pip install openai-whisper`
-        """)
-        return
+    st.title("🎬 AI Subtitle Generator")
+    st.markdown("Generate subtitles using Whisper Large V3 Turbo!")
     
     # Sidebar
     st.sidebar.header("⚙️ Settings")
     
+    # Language selection
+    source_lang_list = ['Automatic'] + list(language_dict.keys())
     source_language = st.sidebar.selectbox(
         "Source Language",
-        list(LANGUAGES.keys()),
+        source_lang_list,
         index=0
     )
     
+    max_words_per_subtitle = st.sidebar.number_input(
+        "Max Words per Subtitle Segment",
+        min_value=1,
+        max_value=20,
+        value=8,
+        help="Useful for vertical videos"
+    )
+    
     # File upload
+    st.header("📁 Upload Your Media File")
     uploaded_file = st.file_uploader(
-        "📁 Choose a video file",
-        type=['mp4', 'avi', 'mov', 'mkv'],
-        help="Upload your video file"
+        "Choose an audio or video file",
+        type=['mp4', 'avi', 'mov', 'mkv', 'mp3', 'wav', 'm4a', 'flac', 'ogg'],
+        help="Avoid uploading large video files. Audio files process faster."
     )
     
     if uploaded_file is not None:
@@ -161,113 +420,132 @@ def main():
         
         # Show file info
         file_size = len(uploaded_file.read()) / (1024 * 1024)
-        uploaded_file.seek(0)
+        uploaded_file.seek(0)  # Reset file pointer
         st.info(f"📊 File size: {file_size:.1f} MB")
         
-        if st.button("🚀 Generate Subtitles", type="primary"):
-            with st.spinner("Processing your video..."):
-                try:
-                    # Create temp directory
-                    temp_dir = tempfile.mkdtemp()
-                    
-                    # Save uploaded file
-                    clean_name = clean_filename(uploaded_file.name)
-                    video_path = os.path.join(temp_dir, f"{clean_name}.mp4")
-                    
-                    with open(video_path, "wb") as f:
-                        f.write(uploaded_file.read())
-                    
-                    st.info("📹 Video saved, extracting audio...")
-                    
-                    # Extract audio
-                    audio_path = os.path.join(temp_dir, f"{clean_name}.wav")
-                    if not extract_audio_simple(video_path, audio_path):
-                        st.error("Failed to extract audio")
-                        return
-                    
-                    st.info("🎵 Audio extracted, transcribing...")
-                    
-                    # Transcribe
-                    lang_code = LANGUAGES[source_language]
-                    srt_path = transcribe_with_whisper_cli(audio_path, lang_code)
-                    
-                    if not srt_path:
-                        st.error("Transcription failed")
-                        return
-                    
-                    st.info("📝 Transcription complete, creating subtitle video...")
-                    
-                    # Create subtitle video
-                    output_video_path = os.path.join(temp_dir, f"{clean_name}_subtitled.mp4")
-                    if not create_subtitle_video_simple(video_path, srt_path, output_video_path):
-                        st.error("Failed to create subtitle video")
-                        return
-                    
-                    # Create text file
-                    txt_path = os.path.join(temp_dir, f"{clean_name}_subtitles.txt")
-                    create_simple_txt(srt_path, txt_path)
-                    
-                    st.success("🎉 Processing completed!")
-                    
-                    # Download buttons
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        if os.path.exists(output_video_path):
-                            with open(output_video_path, "rb") as f:
-                                st.download_button(
-                                    label="📥 Download Video with Subtitles",
-                                    data=f.read(),
-                                    file_name=f"{Path(uploaded_file.name).stem}_subtitled.mp4",
-                                    mime="video/mp4"
-                                )
-                    
-                    with col2:
-                        if os.path.exists(srt_path):
-                            with open(srt_path, "r", encoding="utf-8") as f:
-                                st.download_button(
-                                    label="📥 Download SRT File",
-                                    data=f.read(),
-                                    file_name=f"{Path(uploaded_file.name).stem}.srt",
-                                    mime="text/plain"
-                                )
-                    
-                    with col3:
-                        if os.path.exists(txt_path):
-                            with open(txt_path, "r", encoding="utf-8") as f:
-                                st.download_button(
-                                    label="📥 Download Text File",
-                                    data=f.read(),
-                                    file_name=f"{Path(uploaded_file.name).stem}.txt",
-                                    mime="text/plain"
-                                )
-                    
-                    # Show preview for small files
-                    if file_size < 20:
-                        st.subheader("🎬 Preview")
-                        if os.path.exists(output_video_path):
-                            st.video(output_video_path)
-                    
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-                    st.error("Please try again with a different file.")
-    
-    # Instructions
-    with st.expander("📋 Instructions"):
-        st.markdown("""
-        **How to use:**
-        1. Select source language (or use Automatic)
-        2. Upload your video file (MP4, AVI, MOV, MKV)
-        3. Click "Generate Subtitles"
-        4. Download the results:
-           - Video with embedded subtitles
-           - SRT subtitle file
-           - Plain text transcript
+        if file_size > 100:
+            st.warning("⚠️ Large files may take longer to process.")
         
-        **Requirements:**
-        - FFmpeg must be installed
-        - Whisper must be installed (`pip install openai-whisper`)
-        - Video files under 50MB recommended for better performance
+        # Process button
+        if st.button("🚀 Generate Subtitles", type="primary", disabled=st.session_state.processing):
+            st.session_state.processing = True
+            
+            with st.spinner("Processing your file..."):
+                try:
+                    results = whisper_subtitle(
+                        uploaded_file, 
+                        source_language, 
+                        max_words_per_subtitle
+                    )
+                    
+                    original_srt, customize_srt, word_level_srt, shorts_srt, text_file, detected_lang = results
+                    
+                    if original_srt:
+                        st.success(f"🎉 Processing completed! Detected language: {detected_lang}")
+                        
+                        # Create download section
+                        st.header("📥 Download Results")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.subheader("📄 Standard Files")
+                            
+                            if os.path.exists(original_srt):
+                                with open(original_srt, "rb") as f:
+                                    st.download_button(
+                                        label="📥 Default SRT",
+                                        data=f.read(),
+                                        file_name=f"{Path(uploaded_file.name).stem}_default.srt",
+                                        mime="text/plain"
+                                    )
+                            
+                            if os.path.exists(text_file):
+                                with open(text_file, "rb") as f:
+                                    st.download_button(
+                                        label="📥 Text File",
+                                        data=f.read(),
+                                        file_name=f"{Path(uploaded_file.name).stem}.txt",
+                                        mime="text/plain"
+                                    )
+                        
+                        with col2:
+                            st.subheader("🎯 Custom Formats")
+                            
+                            if os.path.exists(customize_srt):
+                                with open(customize_srt, "rb") as f:
+                                    st.download_button(
+                                        label="📥 Customized SRT",
+                                        data=f.read(),
+                                        file_name=f"{Path(uploaded_file.name).stem}_custom.srt",
+                                        mime="text/plain"
+                                    )
+                            
+                            if os.path.exists(word_level_srt):
+                                with open(word_level_srt, "rb") as f:
+                                    st.download_button(
+                                        label="📥 Word Level SRT",
+                                        data=f.read(),
+                                        file_name=f"{Path(uploaded_file.name).stem}_words.srt",
+                                        mime="text/plain"
+                                    )
+                        
+                        with col3:
+                            st.subheader("📱 For Shorts")
+                            
+                            if os.path.exists(shorts_srt):
+                                with open(shorts_srt, "rb") as f:
+                                    st.download_button(
+                                        label="📥 Shorts SRT",
+                                        data=f.read(),
+                                        file_name=f"{Path(uploaded_file.name).stem}_shorts.srt",
+                                        mime="text/plain"
+                                    )
+                        
+                        # Show preview
+                        if os.path.exists(original_srt):
+                            st.header("👀 Preview")
+                            with open(original_srt, "r", encoding="utf-8") as f:
+                                content = f.read()
+                            st.text_area("SRT Content Preview", content[:500] + "...", height=200)
+                    
+                    else:
+                        st.error("❌ Processing failed. Please try again.")
+                        
+                except Exception as e:
+                    st.error(f"❌ An error occurred: {e}")
+                
+                finally:
+                    st.session_state.processing = False
+    
+    # Information section
+    st.markdown("---")
+    st.header("ℹ️ About")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **🎵 Supported Formats**
+        - Video: MP4, AVI, MOV, MKV
+        - Audio: MP3, WAV, M4A, FLAC, OGG
+        """)
+    
+    with col2:
+        st.markdown("""
+        **🧠 AI Model**
+        - Whisper Large V3 Turbo
+        - Word-level timestamps
+        - 60+ languages supported
+        """)
+    
+    with col3:
+        st.markdown("""
+        **📁 Output Files**
+        - Standard SRT subtitles
+        - Word-level SRT
+        - Shorts-optimized SRT
+        - Text transcript
         """)
 
 if __name__ == "__main__":
