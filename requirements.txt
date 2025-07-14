@@ -1,9 +1,9 @@
-faster-whisper==1.0.3
-torch>=2.1.1 
-gradio
-click
-ctranslate2==4.4.0
 streamlit>=1.28.0
-googletrans==4.0.0rc1
-python-docx>=0.8.11
-pathlib
+faster-whisper>=0.10.0
+torch>=2.0.0
+opencv-python-headless>=4.8.0
+python-docx>=1.1.0
+pathlib>=1.0.1
+uuid
+requests>=2.31.0
+ctranslate2>=3.20.0
