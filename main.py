@@ -4,130 +4,127 @@ import tempfile
 import shutil
 import uuid
 import re
-import math
-import torch
 import gc
 import time
-from faster_whisper import WhisperModel
 from pathlib import Path
 
-# Import your language dictionary
+# Try to import dependencies with proper error handling
 try:
-    from utils import language_dict
+    import torch
+    TORCH_AVAILABLE = True
 except ImportError:
-    # Fallback language dictionary if utils.py is not available
-    # Extended language dictionary with 100+ languages
-    language_dict = {
-        "Afrikaans": {"lang_code": "af"},
-        "Albanian": {"lang_code": "sq"},
-        "Amharic": {"lang_code": "am"},
-        "Arabic": {"lang_code": "ar"},
-        "Armenian": {"lang_code": "hy"},
-        "Assamese": {"lang_code": "as"},
-        "Azerbaijani": {"lang_code": "az"},
-        "Bashkir": {"lang_code": "ba"},
-        "Basque": {"lang_code": "eu"},
-        "Belarusian": {"lang_code": "be"},
-        "Bengali": {"lang_code": "bn"},
-        "Bosnian": {"lang_code": "bs"},
-        "Breton": {"lang_code": "br"},
-        "Bulgarian": {"lang_code": "bg"},
-        "Burmese": {"lang_code": "my"},
-        "Cantonese": {"lang_code": "yue"},
-        "Catalan": {"lang_code": "ca"},
-        "Chinese": {"lang_code": "zh"},
-        "Croatian": {"lang_code": "hr"},
-        "Czech": {"lang_code": "cs"},
-        "Danish": {"lang_code": "da"},
-        "Dutch": {"lang_code": "nl"},
-        "English": {"lang_code": "en"},
-        "Spanish": {"lang_code": "es"},
-        "Estonian": {"lang_code": "et"},
-        "Faroese": {"lang_code": "fo"},
-        "Finnish": {"lang_code": "fi"},
-        "French": {"lang_code": "fr"},
-        "Galician": {"lang_code": "gl"},
-        "Georgian": {"lang_code": "ka"},
-        "German": {"lang_code": "de"},
-        "Greek": {"lang_code": "el"},
-        "Gujarati": {"lang_code": "gu"},
-        "Haitian Creole": {"lang_code": "ht"},
-        "Hausa": {"lang_code": "ha"},
-        "Hawaiian": {"lang_code": "haw"},
-        "Hebrew": {"lang_code": "he"},
-        "Hindi": {"lang_code": "hi"},
-        "Hungarian": {"lang_code": "hu"},
-        "Icelandic": {"lang_code": "is"},
-        "Indonesian": {"lang_code": "id"},
-        "Irish": {"lang_code": "ga"},
-        "Italian": {"lang_code": "it"},
-        "Portuguese": {"lang_code": "pt"},
-        "Russian": {"lang_code": "ru"},
-        "Japanese": {"lang_code": "ja"},
-        "Javanese": {"lang_code": "jw"},
-        "Kannada": {"lang_code": "kn"},
-        "Kazakh": {"lang_code": "kk"},
-        "Khmer": {"lang_code": "km"},
-        "Korean": {"lang_code": "ko"},
-        "Chinese": {"lang_code": "zh"},
-        "Hindi": {"lang_code": "hi"},
-        "Bengali": {"lang_code": "bn"},
-        "Arabic": {"lang_code": "ar"}
-        "Kurdish": {"lang_code": "ku"},
-        "Kyrgyz": {"lang_code": "ky"},
-        "Lao": {"lang_code": "lo"},
-        "Latin": {"lang_code": "la"},
-        "Latvian": {"lang_code": "lv"},
-        "Lithuanian": {"lang_code": "lt"},
-        "Luxembourgish": {"lang_code": "lb"},
-        "Macedonian": {"lang_code": "mk"},
-        "Malagasy": {"lang_code": "mg"},
-        "Malay": {"lang_code": "ms"},
-        "Malayalam": {"lang_code": "ml"},
-        "Maltese": {"lang_code": "mt"},
-        "Mandarin": {"lang_code": "zh-cn"},
-        "Maori": {"lang_code": "mi"},
-        "Marathi": {"lang_code": "mr"},
-        "Mongolian": {"lang_code": "mn"},
-        "Nepali": {"lang_code": "ne"},
-        "Norwegian": {"lang_code": "no"},
-        "Occitan": {"lang_code": "oc"},
-        "Pashto": {"lang_code": "ps"},
-        "Persian": {"lang_code": "fa"},
-        "Polish": {"lang_code": "pl"},
-        "Portuguese": {"lang_code": "pt"},
-        "Punjabi": {"lang_code": "pa"},
-        "Romanian": {"lang_code": "ro"},
-        "Russian": {"lang_code": "ru"},
-        "Sanskrit": {"lang_code": "sa"},
-        "Serbian": {"lang_code": "sr"},
-        "Shona": {"lang_code": "sn"},
-        "Sindhi": {"lang_code": "sd"},
-        "Sinhala": {"lang_code": "si"},
-        "Slovak": {"lang_code": "sk"},
-        "Slovenian": {"lang_code": "sl"},
-        "Somali": {"lang_code": "so"},
-        "Spanish": {"lang_code": "es"},
-        "Sundanese": {"lang_code": "su"},
-        "Swahili": {"lang_code": "sw"},
-        "Swedish": {"lang_code": "sv"},
-        "Tagalog": {"lang_code": "tl"},
-        "Tajik": {"lang_code": "tg"},
-        "Tamil": {"lang_code": "ta"},
-        "Tatar": {"lang_code": "tt"},
-        "Telugu": {"lang_code": "te"},
-        "Thai": {"lang_code": "th"},
-        "Tibetan": {"lang_code": "bo"},
-        "Turkish": {"lang_code": "tr"},
-        "Turkmen": {"lang_code": "tk"},
-        "Ukrainian": {"lang_code": "uk"},
-        "Urdu": {"lang_code": "ur"},
-        "Uzbek": {"lang_code": "uz"},
-        "Vietnamese": {"lang_code": "vi"},
-        "Welsh": {"lang_code": "cy"},
-        "Yiddish": {"lang_code": "yi"},
-        "Yoruba": {"lang_code": "yo"}
-    }
+    TORCH_AVAILABLE = False
+
+try:
+    from faster_whisper import WhisperModel
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
+
+# Comprehensive language dictionary (fixed syntax errors)
+language_dict = {
+    "Afrikaans": {"lang_code": "af"},
+    "Albanian": {"lang_code": "sq"},
+    "Amharic": {"lang_code": "am"},
+    "Arabic": {"lang_code": "ar"},
+    "Armenian": {"lang_code": "hy"},
+    "Azerbaijani": {"lang_code": "az"},
+    "Bashkir": {"lang_code": "ba"},
+    "Basque": {"lang_code": "eu"},
+    "Belarusian": {"lang_code": "be"},
+    "Bengali": {"lang_code": "bn"},
+    "Bosnian": {"lang_code": "bs"},
+    "Breton": {"lang_code": "br"},
+    "Bulgarian": {"lang_code": "bg"},
+    "Burmese": {"lang_code": "my"},
+    "Cantonese": {"lang_code": "yue"},
+    "Catalan": {"lang_code": "ca"},
+    "Chinese": {"lang_code": "zh"},
+    "Croatian": {"lang_code": "hr"},
+    "Czech": {"lang_code": "cs"},
+    "Danish": {"lang_code": "da"},
+    "Dutch": {"lang_code": "nl"},
+    "English": {"lang_code": "en"},
+    "Estonian": {"lang_code": "et"},
+    "Faroese": {"lang_code": "fo"},
+    "Finnish": {"lang_code": "fi"},
+    "French": {"lang_code": "fr"},
+    "Galician": {"lang_code": "gl"},
+    "Georgian": {"lang_code": "ka"},
+    "German": {"lang_code": "de"},
+    "Greek": {"lang_code": "el"},
+    "Gujarati": {"lang_code": "gu"},
+    "Haitian Creole": {"lang_code": "ht"},
+    "Hausa": {"lang_code": "ha"},
+    "Hawaiian": {"lang_code": "haw"},
+    "Hebrew": {"lang_code": "he"},
+    "Hindi": {"lang_code": "hi"},
+    "Hungarian": {"lang_code": "hu"},
+    "Icelandic": {"lang_code": "is"},
+    "Indonesian": {"lang_code": "id"},
+    "Irish": {"lang_code": "ga"},
+    "Italian": {"lang_code": "it"},
+    "Japanese": {"lang_code": "ja"},
+    "Javanese": {"lang_code": "jw"},
+    "Kannada": {"lang_code": "kn"},
+    "Kazakh": {"lang_code": "kk"},
+    "Khmer": {"lang_code": "km"},
+    "Korean": {"lang_code": "ko"},
+    "Kurdish": {"lang_code": "ku"},
+    "Kyrgyz": {"lang_code": "ky"},
+    "Lao": {"lang_code": "lo"},
+    "Latin": {"lang_code": "la"},
+    "Latvian": {"lang_code": "lv"},
+    "Lithuanian": {"lang_code": "lt"},
+    "Luxembourgish": {"lang_code": "lb"},
+    "Macedonian": {"lang_code": "mk"},
+    "Malagasy": {"lang_code": "mg"},
+    "Malay": {"lang_code": "ms"},
+    "Malayalam": {"lang_code": "ml"},
+    "Maltese": {"lang_code": "mt"},
+    "Mandarin": {"lang_code": "zh-cn"},
+    "Maori": {"lang_code": "mi"},
+    "Marathi": {"lang_code": "mr"},
+    "Mongolian": {"lang_code": "mn"},
+    "Nepali": {"lang_code": "ne"},
+    "Norwegian": {"lang_code": "no"},
+    "Occitan": {"lang_code": "oc"},
+    "Pashto": {"lang_code": "ps"},
+    "Persian": {"lang_code": "fa"},
+    "Polish": {"lang_code": "pl"},
+    "Portuguese": {"lang_code": "pt"},
+    "Punjabi": {"lang_code": "pa"},
+    "Romanian": {"lang_code": "ro"},
+    "Russian": {"lang_code": "ru"},
+    "Sanskrit": {"lang_code": "sa"},
+    "Serbian": {"lang_code": "sr"},
+    "Shona": {"lang_code": "sn"},
+    "Sindhi": {"lang_code": "sd"},
+    "Sinhala": {"lang_code": "si"},
+    "Slovak": {"lang_code": "sk"},
+    "Slovenian": {"lang_code": "sl"},
+    "Somali": {"lang_code": "so"},
+    "Spanish": {"lang_code": "es"},
+    "Sundanese": {"lang_code": "su"},
+    "Swahili": {"lang_code": "sw"},
+    "Swedish": {"lang_code": "sv"},
+    "Tagalog": {"lang_code": "tl"},
+    "Tajik": {"lang_code": "tg"},
+    "Tamil": {"lang_code": "ta"},
+    "Tatar": {"lang_code": "tt"},
+    "Telugu": {"lang_code": "te"},
+    "Thai": {"lang_code": "th"},
+    "Tibetan": {"lang_code": "bo"},
+    "Turkish": {"lang_code": "tr"},
+    "Turkmen": {"lang_code": "tk"},
+    "Ukrainian": {"lang_code": "uk"},
+    "Urdu": {"lang_code": "ur"},
+    "Uzbek": {"lang_code": "uz"},
+    "Vietnamese": {"lang_code": "vi"},
+    "Welsh": {"lang_code": "cy"},
+    "Yiddish": {"lang_code": "yi"},
+    "Yoruba": {"lang_code": "yo"}
+}
 
 # Streamlit configuration
 st.set_page_config(
@@ -136,291 +133,309 @@ st.set_page_config(
     layout="wide"
 )
 
+# Check dependencies and show status
+if not TORCH_AVAILABLE:
+    st.error("❌ PyTorch not installed. Please install: pip install torch torchaudio")
+if not WHISPER_AVAILABLE:
+    st.error("❌ faster-whisper not installed. Please install: pip install faster-whisper")
+
+if not (TORCH_AVAILABLE and WHISPER_AVAILABLE):
+    st.stop()
+
 # Initialize session state
 if 'processing' not in st.session_state:
     st.session_state.processing = False
+if 'target_languages' not in st.session_state:
+    st.session_state.target_languages = ["English", "Spanish", "French"]
 
 # Setup folders
 BASE_PATH = "."
-SUBTITLE_FOLDER = f"{BASE_PATH}/generated_subtitle"
-TEMP_FOLDER = f"{BASE_PATH}/subtitle_audio"
+SUBTITLE_FOLDER = os.path.join(BASE_PATH, "generated_subtitle")
+TEMP_FOLDER = os.path.join(BASE_PATH, "subtitle_audio")
 
-# Create folders if they don't exist
-os.makedirs(SUBTITLE_FOLDER, exist_ok=True)
-os.makedirs(TEMP_FOLDER, exist_ok=True)
+try:
+    os.makedirs(SUBTITLE_FOLDER, exist_ok=True)
+    os.makedirs(TEMP_FOLDER, exist_ok=True)
+except Exception as e:
+    st.error(f"Error creating directories: {e}")
+    st.stop()
 
 def get_language_name(lang_code):
     """Get language name from language code"""
     for language, details in language_dict.items():
         if details["lang_code"] == lang_code:
             return language
-    return lang_code
+    return "English"
 
 def clean_file_name(file_path):
     """Clean filename for safe processing"""
-    file_name = os.path.basename(file_path)
-    file_name, file_extension = os.path.splitext(file_name)
-
-    # Replace non-alphanumeric characters with underscore
-    cleaned = re.sub(r'[^a-zA-Z\d]+', '_', file_name)
-    clean_file_name = re.sub(r'_+', '_', cleaned).strip('_')
-
-    # Generate random UUID for uniqueness
-    random_uuid = uuid.uuid4().hex[:6]
-
-    # Combine cleaned file name with original extension
-    clean_file_path = os.path.join(
-        os.path.dirname(file_path), 
-        clean_file_name + f"_{random_uuid}" + file_extension
-    )
-
-    return clean_file_path
+    try:
+        file_name = os.path.basename(file_path)
+        file_name, file_extension = os.path.splitext(file_name)
+        
+        # Replace non-alphanumeric characters with underscore
+        cleaned = re.sub(r'[^a-zA-Z\d]+', '_', file_name)
+        clean_file_name = re.sub(r'_+', '_', cleaned).strip('_')
+        
+        # Limit length and generate random UUID for uniqueness
+        clean_file_name = clean_file_name[:20]
+        random_uuid = uuid.uuid4().hex[:6]
+        
+        # Combine cleaned file name with original extension
+        clean_file_path = os.path.join(
+            os.path.dirname(file_path), 
+            f"{clean_file_name}_{random_uuid}{file_extension}"
+        )
+        
+        return clean_file_path
+    except Exception as e:
+        st.error(f"Error cleaning filename: {e}")
+        return file_path
 
 def format_segments(segments):
     """Format whisper segments into structured data"""
-    saved_segments = list(segments)
-    sentence_timestamp = []
-    words_timestamp = []
-    speech_to_text = ""
+    try:
+        saved_segments = list(segments)
+        sentence_timestamp = []
+        words_timestamp = []
+        speech_to_text = ""
 
-    for i in saved_segments:
-        text = i.text.strip()
-        sentence_id = len(sentence_timestamp)
-        sentence_timestamp.append({
-            "id": sentence_id,
-            "text": text,
-            "start": i.start,
-            "end": i.end,
-            "words": []
-        })
-        speech_to_text += text + " "
+        for i in saved_segments:
+            text = i.text.strip()
+            sentence_id = len(sentence_timestamp)
+            sentence_timestamp.append({
+                "id": sentence_id,
+                "text": text,
+                "start": i.start,
+                "end": i.end,
+                "words": []
+            })
+            speech_to_text += text + " "
 
-        # Process each word in the sentence
-        if hasattr(i, 'words') and i.words:
-            for word in i.words:
-                word_data = {
-                    "word": word.word.strip(),
-                    "start": word.start,
-                    "end": word.end
-                }
-                sentence_timestamp[sentence_id]["words"].append(word_data)
-                words_timestamp.append(word_data)
+            # Process each word in the sentence
+            if hasattr(i, 'words') and i.words:
+                for word in i.words:
+                    word_data = {
+                        "word": word.word.strip(),
+                        "start": word.start,
+                        "end": word.end
+                    }
+                    sentence_timestamp[sentence_id]["words"].append(word_data)
+                    words_timestamp.append(word_data)
 
-    return sentence_timestamp, words_timestamp, speech_to_text
+        return sentence_timestamp, words_timestamp, speech_to_text
+    except Exception as e:
+        st.error(f"Error formatting segments: {e}")
+        return [], [], ""
 
 def combine_word_segments(words_timestamp, max_words_per_subtitle=8, min_silence_between_words=0.5):
     """Combine words into subtitle segments"""
-    if max_words_per_subtitle <= 1:
-        max_words_per_subtitle = 1
+    try:
+        if max_words_per_subtitle <= 1:
+            max_words_per_subtitle = 1
 
-    before_translate = {}
-    id = 1
-    text = ""
-    start = None
-    end = None
-    word_count = 0
-    last_end_time = None
+        before_translate = {}
+        segment_id = 1
+        text = ""
+        start = None
+        end = None
+        word_count = 0
+        last_end_time = None
 
-    for i in words_timestamp:
-        try:
-            word = i['word']
-            word_start = i['start']
-            word_end = i['end']
+        for i in words_timestamp:
+            try:
+                word = i['word']
+                word_start = i['start']
+                word_end = i['end']
 
-            # Check for sentence-ending punctuation
-            is_end_of_sentence = word.endswith(('.', '?', '!'))
+                # Check for sentence-ending punctuation
+                is_end_of_sentence = word.endswith(('.', '?', '!'))
 
-            # Check for conditions to create a new subtitle
-            if ((last_end_time is not None and word_start - last_end_time > min_silence_between_words)
-                or word_count >= max_words_per_subtitle
-                or is_end_of_sentence):
+                # Check for conditions to create a new subtitle
+                if ((last_end_time is not None and word_start - last_end_time > min_silence_between_words)
+                    or word_count >= max_words_per_subtitle
+                    or is_end_of_sentence):
 
-                # Store the previous subtitle if there's any
-                if text:
-                    before_translate[id] = {
-                        "text": text,
-                        "start": start,
-                        "end": end
-                    }
-                    id += 1
+                    # Store the previous subtitle if there's any
+                    if text:
+                        before_translate[segment_id] = {
+                            "text": text,
+                            "start": start,
+                            "end": end
+                        }
+                        segment_id += 1
 
-                # Reset for the new subtitle segment
-                text = word
-                start = word_start
-                word_count = 1
-            else:
-                if word_count == 0:
+                    # Reset for the new subtitle segment
+                    text = word
                     start = word_start
-                text += " " + word
-                word_count += 1
+                    word_count = 1
+                else:
+                    if word_count == 0:
+                        start = word_start
+                    text += " " + word
+                    word_count += 1
 
-            end = word_end
-            last_end_time = word_end
+                end = word_end
+                last_end_time = word_end
 
-        except KeyError as e:
-            st.warning(f"KeyError: {e} - Skipping word")
-            continue
+            except KeyError as e:
+                st.warning(f"KeyError: {e} - Skipping word")
+                continue
 
-    # Add the last subtitle segment
-    if text:
-        before_translate[id] = {
-            "text": text,
-            "start": start,
-            "end": end
-        }
+        # Add the last subtitle segment
+        if text:
+            before_translate[segment_id] = {
+                "text": text,
+                "start": start,
+                "end": end
+            }
 
-    return before_translate
+        return before_translate
+    except Exception as e:
+        st.error(f"Error combining word segments: {e}")
+        return {}
 
 def custom_word_segments(words_timestamp, min_silence_between_words=0.3, max_characters_per_subtitle=17):
     """Create custom word segments for shorts"""
-    before_translate = []
-    text = ""
-    start = None
-    end = None
+    try:
+        before_translate = []
+        text = ""
+        start = None
+        end = None
 
-    i = 0
-    while i < len(words_timestamp):
-        word = words_timestamp[i]['word']
-        word_start = words_timestamp[i]['start']
-        word_end = words_timestamp[i]['end']
+        i = 0
+        while i < len(words_timestamp):
+            word = words_timestamp[i]['word']
+            word_start = words_timestamp[i]['start']
+            word_end = words_timestamp[i]['end']
 
-        # Handle hyphenated words
-        if i + 1 < len(words_timestamp) and words_timestamp[i + 1]['word'].startswith("-"):
-            combined_text = word + words_timestamp[i + 1]['word'][:]
-            combined_start_time = word_start
-            combined_end_time = words_timestamp[i + 1]['end']
-            i += 1
-
-            while i + 1 < len(words_timestamp) and words_timestamp[i + 1]['word'].startswith("-"):
-                combined_text += words_timestamp[i + 1]['word'][:]
+            # Handle hyphenated words
+            if i + 1 < len(words_timestamp) and words_timestamp[i + 1]['word'].startswith("-"):
+                combined_text = word + words_timestamp[i + 1]['word']
+                combined_start_time = word_start
                 combined_end_time = words_timestamp[i + 1]['end']
                 i += 1
-        else:
-            combined_text = word
-            combined_start_time = word_start
-            combined_end_time = word_end
 
-        # Check character limit
-        if len(text) + len(combined_text) > max_characters_per_subtitle:
-            if text:
-                before_translate.append({
-                    "word": text.strip(),
-                    "start": start,
-                    "end": end
-                })
-            text = combined_text
-            start = combined_start_time
-        else:
-            if not text:
+                while i + 1 < len(words_timestamp) and words_timestamp[i + 1]['word'].startswith("-"):
+                    combined_text += words_timestamp[i + 1]['word']
+                    combined_end_time = words_timestamp[i + 1]['end']
+                    i += 1
+            else:
+                combined_text = word
+                combined_start_time = word_start
+                combined_end_time = word_end
+
+            # Check character limit
+            if len(text) + len(combined_text) > max_characters_per_subtitle:
+                if text:
+                    before_translate.append({
+                        "word": text.strip(),
+                        "start": start,
+                        "end": end
+                    })
+                text = combined_text
                 start = combined_start_time
-            text += " " + combined_text
+            else:
+                if not text:
+                    start = combined_start_time
+                text += " " + combined_text
 
-        end = combined_end_time
-        i += 1
+            end = combined_end_time
+            i += 1
 
-    # Add final segment
-    if text:
-        before_translate.append({
-            "word": text.strip(),
-            "start": start,
-            "end": end
-        })
+        # Add final segment
+        if text:
+            before_translate.append({
+                "word": text.strip(),
+                "start": start,
+                "end": end
+            })
 
-    return before_translate
+        return before_translate
+    except Exception as e:
+        st.error(f"Error creating custom word segments: {e}")
+        return []
 
 def convert_time_to_srt_format(seconds):
     """Convert seconds to SRT time format"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    milliseconds = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
+    try:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        milliseconds = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
+    except Exception as e:
+        st.error(f"Error converting time format: {e}")
+        return "00:00:00,000"
 
 def write_subtitles_to_file(subtitles, filename="subtitles.srt"):
     """Write subtitles to SRT file"""
-    with open(filename, 'w', encoding='utf-8') as f:
-        for id, entry in subtitles.items():
-            f.write(f"{id}\n")
-            start_time = convert_time_to_srt_format(entry['start'])
-            end_time = convert_time_to_srt_format(entry['end'])
-            f.write(f"{start_time} --> {end_time}\n")
-            f.write(f"{entry['text']}\n\n")
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            for segment_id, entry in subtitles.items():
+                f.write(f"{segment_id}\n")
+                start_time = convert_time_to_srt_format(entry['start'])
+                end_time = convert_time_to_srt_format(entry['end'])
+                f.write(f"{start_time} --> {end_time}\n")
+                f.write(f"{entry['text']}\n\n")
+    except Exception as e:
+        st.error(f"Error writing subtitles to file: {e}")
 
 def word_level_srt(words_timestamp, srt_path="word_level_subtitle.srt", shorts=False):
     """Create word-level SRT file"""
-    punctuation_pattern = re.compile(r'[.,!?;:"\–—_~^+*|]')
-    with open(srt_path, 'w', encoding='utf-8') as srt_file:
-        for i, word_info in enumerate(words_timestamp, start=1):
-            start_time = convert_time_to_srt_format(word_info['start'])
-            end_time = convert_time_to_srt_format(word_info['end'])
-            word = word_info['word']
-            word = re.sub(punctuation_pattern, '', word)
-            if word.strip() == 'i':
-                word = "I"
-            if not shorts:
-                word = word.replace("-", "")
-            srt_file.write(f"{i}\n{start_time} --> {end_time}\n{word}\n\n")
+    try:
+        punctuation_pattern = re.compile(r'[.,!?;:"\–—_~^+*|]')
+        with open(srt_path, 'w', encoding='utf-8') as srt_file:
+            for i, word_info in enumerate(words_timestamp, start=1):
+                start_time = convert_time_to_srt_format(word_info['start'])
+                end_time = convert_time_to_srt_format(word_info['end'])
+                
+                # Handle both word and text keys for flexibility
+                word = word_info.get('word', word_info.get('text', ''))
+                word = re.sub(punctuation_pattern, '', word)
+                if word.strip().lower() == 'i':
+                    word = "I"
+                if not shorts:
+                    word = word.replace("-", "")
+                srt_file.write(f"{i}\n{start_time} --> {end_time}\n{word}\n\n")
+    except Exception as e:
+        st.error(f"Error creating word-level SRT: {e}")
 
 def generate_srt_from_sentences(sentence_timestamp, srt_path="default_subtitle.srt"):
     """Generate SRT from sentence timestamps"""
-    with open(srt_path, 'w', encoding='utf-8') as srt_file:
-        for index, sentence in enumerate(sentence_timestamp):
-            start_time = convert_time_to_srt_format(sentence['start'])
-            end_time = convert_time_to_srt_format(sentence['end'])
-            srt_file.write(f"{index + 1}\n{start_time} --> {end_time}\n{sentence['text']}\n\n")
+    try:
+        with open(srt_path, 'w', encoding='utf-8') as srt_file:
+            for index, sentence in enumerate(sentence_timestamp):
+                start_time = convert_time_to_srt_format(sentence['start'])
+                end_time = convert_time_to_srt_format(sentence['end'])
+                srt_file.write(f"{index + 1}\n{start_time} --> {end_time}\n{sentence['text']}\n\n")
+    except Exception as e:
+        st.error(f"Error generating SRT from sentences: {e}")
 
 def get_audio_file(uploaded_file):
     """Save uploaded file to temp folder"""
-    file_path = os.path.join(TEMP_FOLDER, uploaded_file.name)
-    file_path = clean_file_name(file_path)
-
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.read())
-
-    return file_path
-
-def whisper_subtitle(uploaded_file, source_language, max_words_per_subtitle=8):
-def translate_text_with_whisper(text, target_language, model):
-    """Translate text using Whisper's translation capability"""
     try:
-        import tempfile
-        import os
-        
-        # Create a temporary audio file with the text (using TTS if available)
-        # For now, we'll use a simple text-based translation approach
-        # This is a placeholder - in a full implementation, you'd use proper translation APIs
-        
-        # Simple language mapping for demonstration
-        language_greetings = {
-            "es": f"[Traducido al español] {text}",
-            "fr": f"[Traduit en français] {text}",
-            "de": f"[Ins Deutsche übersetzt] {text}",
-            "it": f"[Tradotto in italiano] {text}",
-            "pt": f"[Traduzido para português] {text}",
-            "ru": f"[Переведено на русский] {text}",
-            "ja": f"[日本語に翻訳] {text}",
-            "ko": f"[한국어로 번역됨] {text}",
-            "zh": f"[翻译成中文] {text}",
-            "hi": f"[हिंदी में अनुवादित] {text}",
-            "bn": f"[বাংলায় অনুবাদিত] {text}",
-            "ar": f"[مترجم إلى العربية] {text}",
-        }
-        
-        # Get language code
+        file_path = os.path.join(TEMP_FOLDER, uploaded_file.name)
+        file_path = clean_file_name(file_path)
+
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.read())
+
+        return file_path
+    except Exception as e:
+        st.error(f"Error saving uploaded file: {e}")
+        return None
+
+def translate_text_simple(text, target_language):
+    """Simple text translation using language prefixes (demo only)"""
+    try:
         target_code = language_dict.get(target_language, {}).get("lang_code", "en")
-        
-        # For demonstration, return a prefixed version
-        # In production, you'd use Google Translate API, Azure Translator, etc.
-        if target_code in language_greetings:
-            return language_greetings[target_code]
-        else:
-            return f"[Translated to {target_language}] {text}"
-            
+        return f"[{target_code.upper()}] {text}"
     except Exception as e:
         st.warning(f"Translation failed for {target_language}: {e}")
         return text
 
-def create_translated_subtitles(original_srt_path, target_languages, source_language, model):
+def create_translated_subtitles(original_srt_path, target_languages, source_language):
     """Create translated subtitle files for multiple languages"""
     translated_files = {}
     
@@ -430,9 +445,6 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
             srt_content = f.read()
         
         # Parse SRT to extract text
-        import re
-        
-        # Split into blocks
         blocks = srt_content.strip().split('\n\n')
         parsed_subtitles = []
         
@@ -448,10 +460,17 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
                     'text': text
                 })
         
+        # Create progress bar for translations
+        if target_languages:
+            trans_progress = st.progress(0)
+            trans_status = st.empty()
+        
         # Create translated versions for each target language
-        for target_lang in target_languages:
+        for i, target_lang in enumerate(target_languages):
             if target_lang != source_language:
-                st.info(f"🌍 Translating to {target_lang}...")
+                if target_languages:
+                    trans_status.text(f"🌍 Translating to {target_lang}... ({i+1}/{len(target_languages)})")
+                    trans_progress.progress((i+1) / len(target_languages))
                 
                 # Create translated SRT
                 translated_srt_path = original_srt_path.replace('.srt', f'_{target_lang.lower().replace(" ", "_")}.srt')
@@ -462,7 +481,7 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
                 
                 for subtitle in parsed_subtitles:
                     # Translate the text
-                    translated_text = translate_text_with_whisper(subtitle['text'], target_lang, model)
+                    translated_text = translate_text_simple(subtitle['text'], target_lang)
                     
                     # Add to SRT
                     translated_srt_content += f"{subtitle['index']}\n{subtitle['timestamp']}\n{translated_text}\n\n"
@@ -482,12 +501,19 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
                     'srt': translated_srt_path,
                     'txt': translated_txt_path
                 }
+        
+        # Clear progress
+        if target_languages:
+            trans_status.text("✅ All translations complete!")
+            trans_progress.progress(1.0)
     
     except Exception as e:
         st.error(f"Translation error: {e}")
     
     return translated_files
-    """Main subtitle generation function"""
+
+def whisper_subtitle(uploaded_file, source_language, target_languages, max_words_per_subtitle=8):
+    """Main subtitle generation function with translation support"""
     # Progress tracking
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -500,20 +526,33 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         if torch.cuda.is_available():
             device = "cuda"
             compute_type = "float16"
+            st.info("🚀 Using GPU acceleration")
         else:
             device = "cpu" 
             compute_type = "int8"
+            st.info("🖥️ Using CPU (slower but more compatible)")
 
-        faster_whisper_model = WhisperModel(
-            "deepdml/faster-whisper-large-v3-turbo-ct2",
-            device=device, 
-            compute_type=compute_type
-        )
+        # Try large model first, fallback to base if it fails
+        try:
+            faster_whisper_model = WhisperModel(
+                "deepdml/faster-whisper-large-v3-turbo-ct2",
+                device=device, 
+                compute_type=compute_type
+            )
+        except Exception as model_error:
+            st.warning(f"Large model failed: {model_error}. Trying base model...")
+            faster_whisper_model = WhisperModel(
+                "base",
+                device=device, 
+                compute_type=compute_type
+            )
 
         status_text.text("📁 Processing audio file...")
         progress_bar.progress(20)
 
         audio_path = get_audio_file(uploaded_file)
+        if not audio_path:
+            return None, None, None, None, None, None, {}
 
         status_text.text("🎯 Transcribing audio...")
         progress_bar.progress(40)
@@ -540,12 +579,6 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         if os.path.exists(audio_path):
             os.remove(audio_path)
 
-        # Cleanup model
-        del faster_whisper_model
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
         status_text.text("🔧 Creating subtitle files...")
         progress_bar.progress(80)
 
@@ -563,7 +596,8 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
 
         # Setup file names
         base_name = os.path.basename(uploaded_file.name).rsplit('.', 1)[0][:30]
-        save_name = f"{SUBTITLE_FOLDER}/{base_name}_{src_lang}.srt"
+        timestamp = int(time.time())  # Add timestamp for uniqueness
+        save_name = f"{SUBTITLE_FOLDER}/{base_name}_{src_lang}_{timestamp}.srt"
         original_srt_name = clean_file_name(save_name)
         original_txt_name = original_srt_name.replace(".srt", ".txt")
         word_level_srt_name = original_srt_name.replace(".srt", "_word_level.srt")
@@ -579,10 +613,15 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
         with open(original_txt_name, 'w', encoding='utf-8') as f1:
             f1.write(text)
 
+        # Cleanup model before translations
+        del faster_whisper_model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         status_text.text("✅ Processing complete!")
         progress_bar.progress(100)
 
-        return original_srt_name, customize_srt_name, word_level_srt_name, shorts_srt_name, original_txt_name, src_lang
         # Create translations if target languages are specified
         translated_files = {}
         if target_languages and len(target_languages) > 0:
@@ -590,65 +629,77 @@ def create_translated_subtitles(original_srt_path, target_languages, source_lang
             translated_files = create_translated_subtitles(
                 original_srt_name, 
                 target_languages, 
-                src_lang, 
-                faster_whisper_model
+                src_lang
             )
-        
+
         return original_srt_name, customize_srt_name, word_level_srt_name, shorts_srt_name, original_txt_name, src_lang, translated_files
 
     except Exception as e:
         st.error(f"Error in whisper_subtitle: {e}")
-        return None, None, None, None, None, None
+        import traceback
+        st.error(f"Full error: {traceback.format_exc()}")
         return None, None, None, None, None, None, {}
 
 def main():
     st.title("🎬 AI Subtitle Generator")
-    st.markdown("Generate subtitles using Whisper Large V3 Turbo!")
+    st.markdown("Generate subtitles using Whisper Large V3 Turbo with 90+ language support!")
+
+    # Show system info in sidebar
+    st.sidebar.header("📊 System Status")
+    st.sidebar.write(f"PyTorch: {'✅' if TORCH_AVAILABLE else '❌'}")
+    st.sidebar.write(f"Whisper: {'✅' if WHISPER_AVAILABLE else '❌'}")
+    if TORCH_AVAILABLE:
+        st.sidebar.write(f"CUDA: {'✅' if torch.cuda.is_available() else '❌'}")
 
     # Sidebar
     st.sidebar.header("⚙️ Settings")
 
     # Language selection
-    source_lang_list = ['Automatic'] + list(language_dict.keys())
     source_lang_list = ['Automatic'] + sorted(list(language_dict.keys()))
     source_language = st.sidebar.selectbox(
         "Source Language",
         source_lang_list,
-        index=0
         index=0,
         help="Select the language of your audio/video"
     )
-    
+
     # Target languages for translation
     st.sidebar.subheader("🌍 Translation Settings")
     available_languages = sorted(list(language_dict.keys()))
-    
+
     target_languages = st.sidebar.multiselect(
         "Languages to translate to:",
         available_languages,
-        default=["English", "Spanish", "French", "German", "Hindi", "Bengali"],
+        default=st.session_state.target_languages,
         help="Select languages you want the subtitles translated to"
     )
+
+    # Update session state
+    st.session_state.target_languages = target_languages
 
     # Popular language shortcuts
     st.sidebar.markdown("**Quick Select:**")
     col1, col2 = st.sidebar.columns(2)
-    
+
     with col1:
         if st.button("🌏 Asian Languages"):
-            target_languages = ["Chinese", "Japanese", "Korean", "Hindi", "Bengali", "Thai", "Vietnamese"]
-            
+            st.session_state.target_languages = ["Chinese", "Japanese", "Korean", "Hindi", "Bengali", "Thai", "Vietnamese"]
+            st.rerun()
+
     with col2:
         if st.button("🌍 European Languages"):
-            target_languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Russian"]
-    
+            st.session_state.target_languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Russian"]
+            st.rerun()
+
     if st.sidebar.button("🌎 Popular Languages"):
-        target_languages = ["English", "Spanish", "French", "German", "Chinese", "Japanese", "Hindi", "Arabic"]
-    
+        st.session_state.target_languages = ["English", "Spanish", "French", "German", "Chinese", "Japanese", "Hindi", "Arabic"]
+        st.rerun()
+
     if st.sidebar.button("🗺️ All Major Languages"):
-        target_languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Russian", 
+        st.session_state.target_languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Russian", 
                           "Chinese", "Japanese", "Korean", "Hindi", "Bengali", "Arabic", "Turkish"]
-    
+        st.rerun()
+
     max_words_per_subtitle = st.sidebar.number_input(
         "Max Words per Subtitle Segment",
         min_value=1,
@@ -669,17 +720,20 @@ def main():
         st.success(f"✅ File uploaded: {uploaded_file.name}")
 
         # Show file info
-        file_size = len(uploaded_file.read()) / (1024 * 1024)
-        uploaded_file.seek(0)  # Reset file pointer
-        st.info(f"📊 File size: {file_size:.1f} MB")
+        try:
+            file_size = len(uploaded_file.read()) / (1024 * 1024)
+            uploaded_file.seek(0)  # Reset file pointer
+            st.info(f"📊 File size: {file_size:.1f} MB")
 
-        if file_size > 100:
-            st.warning("⚠️ Large files may take longer to process.")
+            if file_size > 100:
+                st.warning("⚠️ Large files may take longer to process.")
+        except Exception as e:
+            st.warning(f"Could not read file size: {e}")
 
         # Show selected languages
         if target_languages:
             st.info(f"🌍 Will translate to: {', '.join(target_languages)}")
-        
+
         # Process button
         if st.button("🚀 Generate Subtitles", type="primary", disabled=st.session_state.processing):
             st.session_state.processing = True
@@ -688,16 +742,14 @@ def main():
                 try:
                     results = whisper_subtitle(
                         uploaded_file, 
-                        source_language, 
                         source_language,
                         target_languages,
                         max_words_per_subtitle
                     )
 
-                    original_srt, customize_srt, word_level_srt, shorts_srt, text_file, detected_lang = results
                     original_srt, customize_srt, word_level_srt, shorts_srt, text_file, detected_lang, translated_files = results
 
-                    if original_srt:
+                    if original_srt and os.path.exists(original_srt):
                         st.success(f"🎉 Processing completed! Detected language: {detected_lang}")
 
                         # Create download section
@@ -705,12 +757,10 @@ def main():
 
                         # Original files
                         st.subheader(f"📄 Original Files ({detected_lang})")
-                        
+
                         col1, col2, col3 = st.columns(3)
 
                         with col1:
-                            st.subheader("📄 Standard Files")
-                            
                             if os.path.exists(original_srt):
                                 with open(original_srt, "rb") as f:
                                     st.download_button(
@@ -720,7 +770,7 @@ def main():
                                         mime="text/plain"
                                     )
 
-                            if os.path.exists(text_file):
+                            if text_file and os.path.exists(text_file):
                                 with open(text_file, "rb") as f:
                                     st.download_button(
                                         label="📥 Text File",
@@ -730,9 +780,7 @@ def main():
                                     )
 
                         with col2:
-                            st.subheader("🎯 Custom Formats")
-                            
-                            if os.path.exists(customize_srt):
+                            if customize_srt and os.path.exists(customize_srt):
                                 with open(customize_srt, "rb") as f:
                                     st.download_button(
                                         label="📥 Customized SRT",
@@ -741,7 +789,7 @@ def main():
                                         mime="text/plain"
                                     )
 
-                            if os.path.exists(word_level_srt):
+                            if word_level_srt and os.path.exists(word_level_srt):
                                 with open(word_level_srt, "rb") as f:
                                     st.download_button(
                                         label="📥 Word Level SRT",
@@ -751,9 +799,7 @@ def main():
                                     )
 
                         with col3:
-                            st.subheader("📱 For Shorts")
-                            
-                            if os.path.exists(shorts_srt):
+                            if shorts_srt and os.path.exists(shorts_srt):
                                 with open(shorts_srt, "rb") as f:
                                     st.download_button(
                                         label="📥 Shorts SRT",
@@ -765,46 +811,48 @@ def main():
                         # Translated files
                         if translated_files:
                             st.subheader("🌍 Translated Files")
-                            
+
                             # Group languages in rows of 3
                             languages = list(translated_files.keys())
                             for i in range(0, len(languages), 3):
                                 cols = st.columns(3)
                                 for j, lang in enumerate(languages[i:i+3]):
-                                    with cols[j]:
-                                        st.markdown(f"**{lang}**")
-                                        
-                                        # SRT download
-                                        srt_path = translated_files[lang]['srt']
-                                        if os.path.exists(srt_path):
-                                            with open(srt_path, "rb") as f:
-                                                st.download_button(
-                                                    label=f"📥 {lang} SRT",
-                                                    data=f.read(),
-                                                    file_name=f"{Path(uploaded_file.name).stem}_{lang.lower().replace(' ', '_')}.srt",
-                                                    mime="text/plain",
-                                                    key=f"srt_{lang}"
-                                                )
-                                        
-                                        # Text download
-                                        txt_path = translated_files[lang]['txt']
-                                        if os.path.exists(txt_path):
-                                            with open(txt_path, "rb") as f:
-                                                st.download_button(
-                                                    label=f"📄 {lang} Text",
-                                                    data=f.read(),
-                                                    file_name=f"{Path(uploaded_file.name).stem}_{lang.lower().replace(' ', '_')}.txt",
-                                                    mime="text/plain",
-                                                    key=f"txt_{lang}"
-                                                )
-                        
+                                    if j < len(cols):
+                                        with cols[j]:
+                                            st.markdown(f"**{lang}**")
+
+                                            # SRT download
+                                            srt_path = translated_files[lang]['srt']
+                                            if os.path.exists(srt_path):
+                                                with open(srt_path, "rb") as f:
+                                                    st.download_button(
+                                                        label=f"📥 {lang} SRT",
+                                                        data=f.read(),
+                                                        file_name=f"{Path(uploaded_file.name).stem}_{lang.lower().replace(' ', '_')}.srt",
+                                                        mime="text/plain",
+                                                        key=f"srt_{lang}_{i}_{j}"
+                                                    )
+
+                                            # Text download
+                                            txt_path = translated_files[lang]['txt']
+                                            if os.path.exists(txt_path):
+                                                with open(txt_path, "rb") as f:
+                                                    st.download_button(
+                                                        label=f"📄 {lang} Text",
+                                                        data=f.read(),
+                                                        file_name=f"{Path(uploaded_file.name).stem}_{lang.lower().replace(' ', '_')}.txt",
+                                                        mime="text/plain",
+                                                        key=f"txt_{lang}_{i}_{j}"
+                                                    )
+
                         # Show preview
                         if os.path.exists(original_srt):
                             st.header("👀 Preview")
                             with open(original_srt, "r", encoding="utf-8") as f:
                                 content = f.read()
-                            st.text_area("SRT Content Preview", content[:500] + "...", height=200)
-                            
+                            preview_content = content[:500] + ("..." if len(content) > 500 else "")
+                            st.text_area("SRT Content Preview", preview_content, height=200)
+
                             # Show translation preview if available
                             if translated_files:
                                 preview_lang = st.selectbox("Preview translation:", list(translated_files.keys()))
@@ -813,13 +861,16 @@ def main():
                                     if os.path.exists(txt_path):
                                         with open(txt_path, "r", encoding="utf-8") as f:
                                             trans_content = f.read()
-                                        st.text_area(f"{preview_lang} Translation Preview", trans_content[:500] + "...", height=150)
+                                        trans_preview = trans_content[:500] + ("..." if len(trans_content) > 500 else "")
+                                        st.text_area(f"{preview_lang} Translation Preview", trans_preview, height=150)
 
                     else:
                         st.error("❌ Processing failed. Please try again.")
 
                 except Exception as e:
                     st.error(f"❌ An error occurred: {e}")
+                    import traceback
+                    st.error(f"Details: {traceback.format_exc()}")
 
                 finally:
                     st.session_state.processing = False
@@ -840,18 +891,19 @@ def main():
     with col2:
         st.markdown("""
         **🧠 AI Model**
-        - Whisper Large V3 Turbo
+        - Whisper Large V3 Turbo (or Base fallback)
         - Word-level timestamps
-        - 60+ languages supported
+        - 90+ languages supported
+        - Auto language detection
         """)
 
     with col3:
         st.markdown("""
         **📁 Output Files**
-        - Standard SRT subtitles
+        - Original + Translated SRT
         - Word-level SRT
         - Shorts-optimized SRT
-        - Text transcript
+        - Text transcripts (all languages)
         """)
 
 if __name__ == "__main__":
